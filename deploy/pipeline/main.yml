@@ -1,0 +1,32 @@
+trigger:
+- main
+
+variables:
+  dockerRegistryServiceConnection: 'azure-container-registry'
+  imageRepository: 'net8-playground'
+  dockerfilePath: '$(Build.SourcesDirectory)/app/Dockerfile'
+  tag: '$(Build.BuildId)'
+
+stages:
+- stage: Build
+  displayName: Build and publish image
+  jobs:
+  - job: Build
+    displayName: Build job
+    pool:
+      name: 'Azure VM Scale Set'      
+    variables:
+    - group: azure-container-registry
+    steps:
+    - task: DockerInstaller@0
+      inputs:
+        dockerVersion: '17.09.0-ce'
+    - task: Docker@2
+      displayName: Build and publish image to Azure Container Registry
+      inputs:
+        command: buildAndPush
+        containerRegistry: $(dockerRegistryServiceConnection)
+        repository: $(imageRepository)
+        dockerfile: $(dockerfilePath)
+        tags: |
+          $(tag)
