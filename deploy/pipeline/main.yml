@@ -4,7 +4,7 @@ trigger:
 variables:
   dockerRegistryServiceConnection: 'azure-container-registry'
   imageRepository: 'net8-playground'
-  dockerfilePath: '$(Build.SourcesDirectory)/app/Dockerfile'
+  dockerfilePath: '$(Build.SourcesDirectory)/Dockerfile'
   tag: '$(Build.BuildId)'
 
 stages:
@@ -12,7 +12,7 @@ stages:
   displayName: Build and publish image
   jobs:
   - job: Build
-    displayName: Build job
+    displayName: Build image
     pool:
       name: 'Azure VM Scale Set'
     steps:
@@ -20,7 +20,7 @@ stages:
       inputs:
         dockerVersion: '17.09.0-ce'
     - task: Docker@2
-      displayName: Build and publish image to Azure Container Registry
+      displayName: Build and publish image to ACR
       inputs:
         command: buildAndPush
         containerRegistry: $(dockerRegistryServiceConnection)
