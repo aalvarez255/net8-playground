@@ -14,9 +14,7 @@ stages:
   - job: Build
     displayName: Build job
     pool:
-      name: 'Azure VM Scale Set'      
-    variables:
-    - group: azure-container-registry
+      name: 'Azure VM Scale Set'
     steps:
     - task: DockerInstaller@0
       inputs:
