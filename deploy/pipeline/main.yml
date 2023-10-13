@@ -108,6 +108,7 @@ stages:
       runOnce:
         deploy:
           steps:
+          - checkout: self
           - task: CmdLine@2
             displayName: Init tfstate.tf
             inputs:
