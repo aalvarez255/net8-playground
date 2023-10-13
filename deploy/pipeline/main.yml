@@ -8,10 +8,93 @@ variables:
   tag: '$(Build.BuildId)'
 
 stages:
-- stage: Build
-  displayName: Build and publish image
+- stage: build_app
+  displayName: Build and test app
   jobs:
-  - job: Build
+  - job: build
+    displayName: Build app
+    pool:
+      name: 'Azure VM Scale Set'
+    steps:
+    - task: UseDotNet@2
+      displayName: install dotnet core
+      inputs:
+        version: 8.0.x
+    - task: DotNetCoreCLI@2
+      displayName: Restore
+      inputs:
+        command: 'restore'
+        projects: '**/*.csproj'
+    - task: DotNetCoreCLI@2
+      displayName: test
+      inputs:
+        command: test
+        projects: '**/*Tests/*.csproj'
+        arguments: --configuration Release --collect "Code coverage" --verbosity m
+  - job: terraform_plan
+    pool:
+      name: 'Azure VM Scale Set'
+    variables:
+    - group: azure-subscription
+    - group: tfstate-storage
+    steps:
+    - task: CmdLine@2
+      displayName: Init tfstate.tf
+      inputs:
+        script: >
+          cat << EOT >> tfstate.tf
+
+          terraform {
+            backend "azurerm" {
+              storage_account_name      = "$(storage_account)"
+              container_name            = "net8-playground"
+              key                       = "terraform.tfstate"
+              access_key                = "$(access_key)"
+            }
+          }
+
+          EOT
+        workingDirectory: deploy/terraform
+    - task: CmdLine@2
+      displayName: install 'unzip'
+      inputs:
+        script: sudo apt install unzip
+    - task: charleszipp.azure-pipelines-tasks-terraform.azure-pipelines-tasks-terraform-installer.TerraformInstaller@0
+      displayName: 'Install Terraform'
+      inputs:
+        terraformVersion: 'latest'
+    - task: CmdLine@2
+      displayName: terraform init
+      inputs:
+        script: terraform init
+        workingDirectory: deploy/terraform
+    - task: CmdLine@2
+      displayName: Create env.tfvars
+      inputs:
+        script: >
+          cat << EOT >> env.tfvars
+
+          tenant_id                   = "$(tenant_id)"
+          
+          subscription_id             = "$(subscription_id)"
+
+          client_id                   = "$(client_id)"
+
+          client_secret               = "$(client_secret)"
+
+          EOT
+        workingDirectory: deploy/terraform
+    - task: CmdLine@2
+      displayName: terraform plan
+      inputs:
+        script: terraform plan -var-file="env.tfvars"
+        workingDirectory: deploy/terraform
+- stage: build_docker
+  displayName: Build and publish image
+  dependsOn:
+  - build_app
+  jobs:
+  - job: build
     displayName: Build image
     pool:
       name: 'Azure VM Scale Set'
@@ -28,3 +111,98 @@ stages:
         dockerfile: $(dockerfilePath)
         tags: |
           $(tag)
+- stage: terraform_apply
+  displayName: Apply terraform infrastructure
+  dependsOn:
+  - build_docker
+  jobs:
+  - job: apply
+    displayName: Terraform apply
+    pool:
+      name: 'Azure VM Scale Set'      
+    variables:
+    - group: azure-subscription
+    - group: tfstate-storage
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - checkout: self
+          - task: CmdLine@2
+            displayName: Init tfstate.tf
+            inputs:
+              script: >
+                cat << EOT >> tfstate.tf
+
+                terraform {
+                  backend "azurerm" {
+                    storage_account_name      = "$(storage_account)"
+                    container_name            = "net8-playground"
+                    key                       = "terraform.tfstate"
+                    access_key                = "$(access_key)"
+                  }
+                }
+
+                EOT
+              workingDirectory: deploy/terraform
+          - task: CmdLine@2
+            displayName: install 'unzip'
+            inputs:
+              script: sudo apt install unzip
+          - task: charleszipp.azure-pipelines-tasks-terraform.azure-pipelines-tasks-terraform-installer.TerraformInstaller@0
+            displayName: 'Install Terraform'
+            inputs:
+              terraformVersion: 'latest'       
+          - task: CmdLine@2
+            displayName: terraform init
+            inputs:
+              script: terraform init
+              workingDirectory: deploy/terraform 
+          - task: CmdLine@2
+            displayName: Create env.tfvars
+            inputs:
+              script: >
+                cat << EOT >> env.tfvars
+
+                tenant_id                   = "$(tenant_id)"
+                
+                subscription_id             = "$(subscription_id)"
+
+                client_id                   = "$(client_id)"
+
+                client_secret               = "$(client_secret)"
+
+                EOT
+              workingDirectory: deploy/terraform
+          - task: CmdLine@2
+            displayName: terraform apply
+            inputs:
+              script: terraform apply -auto-approve -var-file="env.tfvars"
+              workingDirectory: deploy/terraform
+          - task: CmdLine@2
+            displayName: save terraform output
+            inputs:
+              script: |
+                resource_group_name=$(terraform output -json resource_group_name)
+                container_app_name=$(terraform output -json container_app_name)
+                echo "##vso[task.setvariable variable=ContainerAppResourceGroup;]$resource_group_name"
+                echo "##vso[task.setvariable variable=ContainerAppName;]$container_app_name"
+              workingDirectory: deploy/terraform
+# - stage: deploy_app
+#   displayName: Deploy to app container
+#   dependsOn:
+#   - terraform_apply
+#   jobs:
+#   - job: deploy
+#     displayName: Deploy image from ACR to Container App
+#     pool:
+#       name: 'Azure VM Scale Set'
+#     variables:
+#     - group: azure-subscription
+#     steps:          
+#     - task: AzureContainerApps@1
+#       inputs:
+#         azureSubscription: 'my-subscription-service-connection'
+#         containerAppName: '$(ContainerAppName)'
+#         resourceGroup: '$(ContainerAppResourceGroup)'
+#         imageToDeploy: 'myregistry.azurecr.io/$(imageRepository):$(tag)'
