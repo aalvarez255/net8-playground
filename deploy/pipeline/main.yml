@@ -20,6 +20,7 @@ stages:
       displayName: install dotnet core
       inputs:
         version: 8.0.x
+      includePreviewVersions: true
     - task: DotNetCoreCLI@2
       displayName: Restore
       inputs:
@@ -89,32 +90,10 @@ stages:
       inputs:
         script: terraform plan -var-file="env.tfvars"
         workingDirectory: deploy/terraform
-- stage: build_docker
-  displayName: Build and publish image
-  dependsOn:
-  - build_app
-  jobs:
-  - job: build
-    displayName: Build image
-    pool:
-      name: 'Azure VM Scale Set'
-    steps:
-    - task: DockerInstaller@0
-      inputs:
-        dockerVersion: '17.09.0-ce'
-    - task: Docker@2
-      displayName: Build and publish image to ACR
-      inputs:
-        command: buildAndPush
-        containerRegistry: $(dockerRegistryServiceConnection)
-        repository: $(imageRepository)
-        dockerfile: $(dockerfilePath)
-        tags: |
-          $(tag)
 - stage: terraform_apply
   displayName: Apply terraform infrastructure
   dependsOn:
-  - build_docker
+  - terraform_plan
   jobs:
   - job: apply
     displayName: Terraform apply
@@ -183,7 +162,29 @@ stages:
           container_app_name=$(terraform output -json container_app_name)
           echo "##vso[task.setvariable variable=ContainerAppResourceGroup;]$resource_group_name"
           echo "##vso[task.setvariable variable=ContainerAppName;]$container_app_name"
-        workingDirectory: deploy/terraform
+        workingDirectory: deploy/terraform        
+- stage: build_docker
+  displayName: Build and publish image
+  dependsOn:
+  - terraform_apply
+  jobs:
+  - job: build
+    displayName: Build image
+    pool:
+      name: 'Azure VM Scale Set'
+    steps:
+    - task: DockerInstaller@0
+      inputs:
+        dockerVersion: '17.09.0-ce'
+    - task: Docker@2
+      displayName: Build and publish image to ACR
+      inputs:
+        command: buildAndPush
+        containerRegistry: $(dockerRegistryServiceConnection)
+        repository: $(imageRepository)
+        dockerfile: $(dockerfilePath)
+        tags: |
+          $(tag)
 # - stage: deploy_app
 #   displayName: Deploy to app container
 #   dependsOn:
