@@ -95,74 +95,79 @@ stages:
   dependsOn:
   - build_app
   jobs:
-  - job: apply
+  - deployment: apply
+    environment:
+      name: net8-playground
     displayName: Terraform apply
     pool:
       name: 'Azure VM Scale Set'      
     variables:
     - group: azure-subscription
     - group: tfstate-storage
-    steps:
-    - task: CmdLine@2
-      displayName: Init tfstate.tf
-      inputs:
-        script: >
-          cat << EOT >> tfstate.tf
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - task: CmdLine@2
+            displayName: Init tfstate.tf
+            inputs:
+              script: >
+                cat << EOT >> tfstate.tf
 
-          terraform {
-            backend "azurerm" {
-              storage_account_name      = "$(storage_account)"
-              container_name            = "net8-playground"
-              key                       = "terraform.tfstate"
-              access_key                = "$(access_key)"
-            }
-          }
+                terraform {
+                  backend "azurerm" {
+                    storage_account_name      = "$(storage_account)"
+                    container_name            = "net8-playground"
+                    key                       = "terraform.tfstate"
+                    access_key                = "$(access_key)"
+                  }
+                }
 
-          EOT
-        workingDirectory: deploy/terraform
-    - task: CmdLine@2
-      displayName: install 'unzip'
-      inputs:
-        script: sudo apt install unzip
-    - task: charleszipp.azure-pipelines-tasks-terraform.azure-pipelines-tasks-terraform-installer.TerraformInstaller@0
-      displayName: 'Install Terraform'
-      inputs:
-        terraformVersion: 'latest'       
-    - task: CmdLine@2
-      displayName: terraform init
-      inputs:
-        script: terraform init
-        workingDirectory: deploy/terraform 
-    - task: CmdLine@2
-      displayName: Create env.tfvars
-      inputs:
-        script: >
-          cat << EOT >> env.tfvars
+                EOT
+              workingDirectory: deploy/terraform
+          - task: CmdLine@2
+            displayName: install 'unzip'
+            inputs:
+              script: sudo apt install unzip
+          - task: charleszipp.azure-pipelines-tasks-terraform.azure-pipelines-tasks-terraform-installer.TerraformInstaller@0
+            displayName: 'Install Terraform'
+            inputs:
+              terraformVersion: 'latest'       
+          - task: CmdLine@2
+            displayName: terraform init
+            inputs:
+              script: terraform init
+              workingDirectory: deploy/terraform 
+          - task: CmdLine@2
+            displayName: Create env.tfvars
+            inputs:
+              script: >
+                cat << EOT >> env.tfvars
 
-          tenant_id                   = "$(tenant_id)"
-          
-          subscription_id             = "$(subscription_id)"
+                tenant_id                   = "$(tenant_id)"
+                
+                subscription_id             = "$(subscription_id)"
 
-          client_id                   = "$(client_id)"
+                client_id                   = "$(client_id)"
 
-          client_secret               = "$(client_secret)"
+                client_secret               = "$(client_secret)"
 
-          EOT
-        workingDirectory: deploy/terraform
-    - task: CmdLine@2
-      displayName: terraform apply
-      inputs:
-        script: terraform apply -auto-approve -var-file="env.tfvars"
-        workingDirectory: deploy/terraform
-    - task: CmdLine@2
-      displayName: save terraform output
-      inputs:
-        script: |
-          resource_group_name=$(terraform output -json resource_group_name)
-          container_app_name=$(terraform output -json container_app_name)
-          echo "##vso[task.setvariable variable=ContainerAppResourceGroup;]$resource_group_name"
-          echo "##vso[task.setvariable variable=ContainerAppName;]$container_app_name"
-        workingDirectory: deploy/terraform        
+                EOT
+              workingDirectory: deploy/terraform
+          - task: CmdLine@2
+            displayName: terraform apply
+            inputs:
+              script: terraform apply -auto-approve -var-file="env.tfvars"
+              workingDirectory: deploy/terraform
+          - task: CmdLine@2
+            displayName: save terraform output
+            inputs:
+              script: |
+                resource_group_name=$(terraform output -json resource_group_name)
+                container_app_name=$(terraform output -json container_app_name)
+                echo "##vso[task.setvariable variable=ContainerAppResourceGroup;]$resource_group_name"
+                echo "##vso[task.setvariable variable=ContainerAppName;]$container_app_name"
+              workingDirectory: deploy/terraform        
 - stage: build_docker
   displayName: Build and publish image
   dependsOn:
