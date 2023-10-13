@@ -93,7 +93,7 @@ stages:
 - stage: terraform_apply
   displayName: Apply terraform infrastructure
   dependsOn:
-  - terraform_plan
+  - build_app
   jobs:
   - job: apply
     displayName: Terraform apply
