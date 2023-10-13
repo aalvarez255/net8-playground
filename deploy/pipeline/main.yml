@@ -20,7 +20,7 @@ stages:
       displayName: install dotnet core
       inputs:
         version: 8.0.x
-      includePreviewVersions: true
+        includePreviewVersions: true
     - task: DotNetCoreCLI@2
       displayName: Restore
       inputs:
